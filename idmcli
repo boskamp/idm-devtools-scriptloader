@@ -1,0 +1,2 @@
+#/bin/bash
+java -cp $(find lib -iname '*.jar' -printf '%p:'):bin org.idmacs.IDMCLI "$@"
