@@ -74,7 +74,6 @@ public class IDMCLI {
 		ResultSet rs = null;
 
 		Connection con = DriverManager.getConnection(jdbcUrl);
-		con.setAutoCommit(false);
 
 		try {
 			s = con.createStatement();
@@ -124,6 +123,11 @@ public class IDMCLI {
 			throw new Exception("Package name is mandatory for put");
 		}
 
+		if (pkgName.endsWith(System.getProperty("file.separator"))) {
+			pkgName = pkgName.substring(0, pkgName.length() - 1);
+			trc(M + "Removed trailing file separator: pkgName=" + pkgName);
+		}
+
 		File pkgNameDir = new File(pkgName);
 		if (!pkgNameDir.exists()) {
 			throw new Exception("Directory " + pkgNameDir.getAbsolutePath()
@@ -155,8 +159,8 @@ public class IDMCLI {
 
 				for (int i = 0; i < pkgScriptFileNames.length; ++i) {
 					String scriptName = pkgScriptFileNames[i].substring(0,
-							pkgScriptFileNames[i].length() - ".js".length())
-							.toUpperCase();
+							pkgScriptFileNames[i].length() - ".js".length());
+
 					byte[] rawScriptContent = readRawFile(pkgNameDir,
 							pkgScriptFileNames[i]);
 
