@@ -24,6 +24,16 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.codec.binary.Base64;
 
 public class IDMCLI {
+
+	private static class ShowMessageOnlyException extends Exception {
+		static final long serialVersionUID = 1L;
+
+		public ShowMessageOnlyException(String msg) {
+			super(msg);
+		}
+
+	}
+
 	private static boolean g_verbose;
 
 	private static void trc(String msg) {
@@ -360,6 +370,16 @@ public class IDMCLI {
 
 	}// readRawFile
 
+	private static String getMandatoryParam(CommandLine line, char p)
+			throws Exception {
+		String v = line.getOptionValue(p);
+		if (v == null || v.equals("")) {
+			throw new ShowMessageOnlyException("Missing mandatory parameter -"
+					+ p + "; try idmcli --help");
+		}
+		return v;
+	}// getMandatoryParam
+
 	public static void main(String[] args) throws Exception {
 		final String M = "main: ";
 		trc(M + "Entering args=" + args);
@@ -382,7 +402,7 @@ public class IDMCLI {
 		options.addOption(Option //
 				.builder("u") // short name
 				.longOpt("url") // long name
-				.required() //
+				.required(false) //
 				.desc("JDBC URL for _admin connection") // description
 				.hasArg() //
 				.argName("JDBC_URL") //
@@ -402,85 +422,96 @@ public class IDMCLI {
 				.desc("Display this help") // description
 				.build());
 
-		boolean exceptionOccurred = false;
 		CommandLine line = null;
+
 		try {
 
 			// parse the command line arguments
 			line = parser.parse(options, args);
-			String jdbcUrl = line.getOptionValue('u');
-			String pkgName = line.getOptionValue('p');
-			g_verbose = line.hasOption('v');
 
-			List<String> aCmd = line.getArgList();
-			if (aCmd.size() > 0) {
-				String cmd = aCmd.get(0).toLowerCase();
+			if (!line.hasOption('h')) {
 
-				if ("get".startsWith(cmd)) {
-					doGet(jdbcUrl, pkgName);
-				} else if ("put".startsWith(cmd)) {
-					doPut(jdbcUrl, pkgName);
+				g_verbose = line.hasOption('v');
+
+				List<String> aCmd = line.getArgList();
+				if (aCmd.size() > 0) {
+					String cmd = aCmd.get(0).toLowerCase();
+
+					if ("get".startsWith(cmd)) {
+						String jdbcUrl = getMandatoryParam(line, 'u');
+						String pkgName = getMandatoryParam(line, 'p');
+
+						doGet(jdbcUrl, pkgName);
+					} else if ("put".startsWith(cmd)) {
+						String jdbcUrl = getMandatoryParam(line, 'u');
+						String pkgName = getMandatoryParam(line, 'p');
+
+						doPut(jdbcUrl, pkgName);
+					} else {
+						throw new ShowMessageOnlyException(
+								"Unrecognized command: " + cmd
+										+ "; try idmcli --help");
+					}
 				} else {
-					throw new Exception("Unrecognized command: " + cmd);
+					throw new ShowMessageOnlyException(
+							"Missing command; try idmcli --help");
 				}
-			} else {
-				throw new Exception("Missing command");
-			}
+			}// if(!line.hasOption('h'))
+			else {
+				HelpFormatter formatter = new HelpFormatter();
+				formatter.setLeftPadding(4);
+				String br = formatter.getNewLine();
+				char[] alp = new char[formatter.getLeftPadding()];
+				Arrays.fill(alp, ' ');
+				String lp = new String(alp);
+				String header = "Put/get package scripts into/from SAP IDM database"
+						+ br //
+						+ br //
+						+ "COMMANDS:" + br //
+						+ lp + "get: download from database to filesystem" + br //
+						+ lp + "put: upload from filesystem to database" + br //
+						+ br //
+						+ "OPTIONS:" + br //
+				;
 
+				String footer = br //
+						+ "EXAMPLES:"
+						+ br //
+						+ "idmcli get -p de.foxysoft.core -u jdbc:sqlserver://..."
+						+ br //
+						+ lp
+						+ "Download all scripts from package de.foxysoft.core"
+						+ br //
+						+ lp
+						+ "into local directory $(pwd)/de.foxysoft.core, which will"
+						+ br //
+						+ lp
+						+ "be created if necessary."
+						+ br //
+						+ br //
+						+ "idmcli put -p de.foxsoft.core -u jdbc:sqlserver://..."
+						+ br //
+						+ lp
+						+ "Upload all *.js files located in directory $(pwd)/de.foxysoft.core"
+						+ br //
+						+ lp
+						+ "into package de.foxysoft.core in the database"
+						+ br //
+						+ br //
+				;
+
+				// Output options in the order they have been declared
+				formatter.setOptionComparator(null);
+
+				formatter.printHelp("idmcli <cmd>", header, options, footer,
+						true);
+			}// else
+		} catch(org.apache.commons.cli.MissingArgumentException mae) {
+			System.err.println(mae.getMessage()+"; try idmcli --help");
+		} catch (ShowMessageOnlyException smoe) {
+			System.err.println(smoe.getMessage());
 		} catch (Exception e) {
-			if (g_verbose) {
-				e.printStackTrace();
-			} else {
-				System.err.println(e.getMessage());
-			}
-			exceptionOccurred = true;
-		}
-
-		if (exceptionOccurred || (line != null && line.hasOption('h'))) {
-			HelpFormatter formatter = new HelpFormatter();
-			formatter.setLeftPadding(4);
-			String br = formatter.getNewLine();
-			char[] alp = new char[formatter.getLeftPadding()];
-			Arrays.fill(alp, ' ');
-			String lp = new String(alp);
-			String header = "Put/get package scripts into/from SAP IDM database"
-					+ br //
-					+ br //
-					+ "COMMANDS:" + br //
-					+ lp + "get: download from database to filesystem" + br //
-					+ lp + "put: upload from filesystem to database" + br //
-					+ br //
-					+ "OPTIONS:" + br //
-			;
-
-			String footer = br //
-					+ "EXAMPLES:"
-					+ br //
-					+ "idmcli get -p de.foxysoft.core -u jdbc:sqlserver://..."
-					+ br //
-					+ lp
-					+ "Download all scripts from package de.foxysoft.core"
-					+ br //
-					+ lp
-					+ "into local directory $(pwd)/de.foxysoft.core, which will"
-					+ br //
-					+ lp
-					+ "be created if necessary."
-					+ br //
-					+ br //
-					+ "idmcli put -p de.foxsoft.core -u jdbc:sqlserver://..."
-					+ br //
-					+ lp
-					+ "Upload all *.js files located in directory $(pwd)/de.foxysoft.core"
-					+ br //
-					+ lp + "into package de.foxysoft.core in the database" + br //
-					+ br //
-			;
-
-			// Output options in the order they have been declared
-			formatter.setOptionComparator(null);
-
-			formatter.printHelp("idmcli <cmd>", header, options, footer, true);
+			e.printStackTrace();
 		}
 
 		trc(M + "Returning");
