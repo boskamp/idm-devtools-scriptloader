@@ -168,6 +168,11 @@ public class IDMCLI {
 				int pkgId = dbQueryPackageId(con, pkgName);
 
 				for (int i = 0; i < pkgScriptFileNames.length; ++i) {
+					if (g_verbose) {
+						System.out.println((i + 1) + "/"
+								+ pkgScriptFileNames.length + ": "
+								+ pkgScriptFileNames[i]);
+					}
 					String scriptName = pkgScriptFileNames[i].substring(0,
 							pkgScriptFileNames[i].length() - ".js".length());
 
@@ -506,8 +511,8 @@ public class IDMCLI {
 				formatter.printHelp("idmcli <cmd>", header, options, footer,
 						true);
 			}// else
-		} catch(org.apache.commons.cli.MissingArgumentException mae) {
-			System.err.println(mae.getMessage()+"; try idmcli --help");
+		} catch (org.apache.commons.cli.MissingArgumentException mae) {
+			System.err.println(mae.getMessage() + "; try idmcli --help");
 		} catch (ShowMessageOnlyException smoe) {
 			System.err.println(smoe.getMessage());
 		} catch (Exception e) {
