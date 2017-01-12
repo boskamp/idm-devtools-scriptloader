@@ -12,6 +12,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -35,6 +36,7 @@ public class IDMCLI {
 	}
 
 	private static boolean g_verbose;
+	private static boolean g_show_progress;
 
 	private static void trc(String msg) {
 		if (g_verbose) {
@@ -125,9 +127,11 @@ public class IDMCLI {
 		}
 	}
 
-	private static void doPut(String jdbcUrl, String pkgName) throws Exception {
+	private static void doPut(String jdbcUrl, String pkgName,
+			List<String> scriptFileNames) throws Exception {
 		final String M = "doPut: ";
-		trc(M + "Entering jdbcUrl=" + jdbcUrl + ", pkgName=" + pkgName);
+		trc(M + "Entering jdbcUrl=" + jdbcUrl + ", pkgName=" + pkgName
+				+ ", scriptFileNames=" + scriptFileNames);
 
 		if (pkgName == null || pkgName.equals("")) {
 			throw new Exception("Package name is mandatory for put");
@@ -138,28 +142,53 @@ public class IDMCLI {
 			trc(M + "Removed trailing file separator: pkgName=" + pkgName);
 		}
 
-		File pkgNameDir = new File(pkgName);
-		if (!pkgNameDir.exists()) {
-			throw new Exception("Directory " + pkgNameDir.getAbsolutePath()
-					+ " does not exist");
-		}
+		File[] scriptFiles = null;
 
-		if (!pkgNameDir.isDirectory()) {
-			throw new Exception(pkgNameDir.getAbsolutePath()
-					+ " must be a directory; found file instead");
-		}
+		// If -f given: check existence of each and use as is
+		if (!scriptFileNames.isEmpty()) {
+			scriptFiles = new File[scriptFileNames.size()];
 
-		String[] pkgScriptFileNames = pkgNameDir.list(new FilenameFilter() {
-
-			@Override
-			public boolean accept(File dir, String name) {
-				return name.toLowerCase().endsWith(".js");
+			for (int i = 0; i < scriptFileNames.size(); ++i) {
+				File scriptFile = new File(scriptFileNames.get(i));
+				if (scriptFile.exists()) {
+					scriptFiles[i] = scriptFile;
+				} else {
+					System.err.println("File " + scriptFile.getCanonicalPath()
+							+ " not found");
+				}
 			}
-		});
+		}
+		// Otherwise look for *.js files in subdirectory named like package
+		else {
+			File pkgNameDir = new File(pkgName);
+			if (!pkgNameDir.exists()) {
+				throw new Exception("Directory " + pkgNameDir.getAbsolutePath()
+						+ " does not exist");
+			}
 
-		if (pkgScriptFileNames.length > 0) {
+			if (!pkgNameDir.isDirectory()) {
+				throw new Exception(pkgNameDir.getAbsolutePath()
+						+ " must be a directory; found file instead");
+			}
+
+			String[] pkgScriptFileNames = pkgNameDir.list(new FilenameFilter() {
+
+				@Override
+				public boolean accept(File dir, String name) {
+					return name.toLowerCase().endsWith(".js")
+							&& !name.startsWith(".");
+				}
+			});
 
 			Arrays.sort(pkgScriptFileNames);
+
+			scriptFiles = new File[pkgScriptFileNames.length];
+			for (int i = 0; i < pkgScriptFileNames.length; ++i) {
+				scriptFiles[i] = new File(pkgNameDir, pkgScriptFileNames[i]);
+			}
+		}// if
+
+		if (scriptFiles.length > 0) {
 
 			Connection con = DriverManager.getConnection(jdbcUrl);
 			con.setAutoCommit(false);
@@ -167,17 +196,22 @@ public class IDMCLI {
 			try {
 				int pkgId = dbQueryPackageId(con, pkgName);
 
-				for (int i = 0; i < pkgScriptFileNames.length; ++i) {
-					if (g_verbose) {
-						System.out.println((i + 1) + "/"
-								+ pkgScriptFileNames.length + ": "
-								+ pkgScriptFileNames[i]);
-					}
-					String scriptName = pkgScriptFileNames[i].substring(0,
-							pkgScriptFileNames[i].length() - ".js".length());
+				for (int i = 0; i < scriptFiles.length; ++i) {
+					File scriptFile = scriptFiles[i];
+					String scriptFileName = scriptFile.getName();
 
-					byte[] rawScriptContent = readRawFile(pkgNameDir,
-							pkgScriptFileNames[i]);
+					if (g_show_progress) {
+						System.out.println(//
+								(i + 1) + "/" + scriptFiles.length //
+										+ ": " + scriptFileName //
+								);
+					}
+					String scriptName = scriptFileName.substring(//
+							0, //
+							scriptFileName.length() - ".js".length()//
+					);
+
+					byte[] rawScriptContent = readRawFile(scriptFile);
 
 					String encodedScriptContent = "{B64}"
 							+ Base64.encodeBase64String(rawScriptContent);
@@ -360,10 +394,8 @@ public class IDMCLI {
 
 	}// dbUpdateScript
 
-	private static byte[] readRawFile(File dir, String fileName)
-			throws Exception {
+	private static byte[] readRawFile(File scriptFile) throws Exception {
 		byte[] buffer = new byte[1024];
-		File scriptFile = new File(dir, fileName);
 		InputStream is = new FileInputStream(scriptFile);
 		ByteArrayOutputStream os = new ByteArrayOutputStream();
 		int len;
@@ -405,12 +437,29 @@ public class IDMCLI {
 				.build());
 
 		options.addOption(Option //
+				.builder("f") // short name
+				.longOpt("files") // long name
+				.required(false) //
+				.desc("script files") // description
+				.hasArgs() // multiple values allowed
+				.argName("FILES...") //
+				.build());
+
+		options.addOption(Option //
 				.builder("u") // short name
 				.longOpt("url") // long name
 				.required(false) //
 				.desc("JDBC URL for _admin connection") // description
 				.hasArg() //
 				.argName("JDBC_URL") //
+				.build());
+
+		options.addOption(Option //
+				.builder("P") // short name
+				.longOpt("progress") // long name
+				.required(false) //
+				.desc("show progress") // description
+				.argName("PKG_NAME") //
 				.build());
 
 		options.addOption(Option //
@@ -437,6 +486,7 @@ public class IDMCLI {
 			if (!line.hasOption('h')) {
 
 				g_verbose = line.hasOption('v');
+				g_show_progress = line.hasOption('P');
 
 				List<String> aCmd = line.getArgList();
 				if (aCmd.size() > 0) {
@@ -450,8 +500,10 @@ public class IDMCLI {
 					} else if ("put".startsWith(cmd)) {
 						String jdbcUrl = getMandatoryParam(line, 'u');
 						String pkgName = getMandatoryParam(line, 'p');
-
-						doPut(jdbcUrl, pkgName);
+						List<String> scriptFiles = line.hasOption('f') ? Arrays
+								.asList(line.getOptionValues('f'))
+								: new ArrayList<String>(0);
+						doPut(jdbcUrl, pkgName, scriptFiles);
 					} else {
 						throw new ShowMessageOnlyException(
 								"Unrecognized command: " + cmd
@@ -498,6 +550,17 @@ public class IDMCLI {
 						+ br //
 						+ lp
 						+ "Upload all *.js files located in directory $(pwd)/de.foxysoft.core"
+						+ br //
+						+ lp
+						+ "into package de.foxysoft.core in the database"
+						+ br //
+						+ br //
+						+ "idmcli put -p de.foxsoft.core -u jdbc:sqlserver://... \\"
+						+ br //
+						+ "           -f scripts/js/fx_trace.js"
+						+ br //
+						+ lp
+						+ "Upload file fx_trace.js from subdirectory scripts/js"
 						+ br //
 						+ lp
 						+ "into package de.foxysoft.core in the database"
