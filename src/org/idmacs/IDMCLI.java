@@ -195,6 +195,13 @@ public class IDMCLI {
 			Connection con = DriverManager.getConnection(jdbcUrl);
 			con.setAutoCommit(false);
 
+			List<Integer> updScriptId = new ArrayList<Integer>(
+					scriptFiles.length);
+			List<String> updScriptName = new ArrayList<String>(
+					scriptFiles.length);
+			List<String> updEncodedScriptContent = new ArrayList<String>(
+					scriptFiles.length);
+
 			try {
 				int pkgId = dbQueryPackageId(con, pkgName);
 				Map<String, Integer> pkgScriptsDb = dbQueryPackageScripts(con,
@@ -220,10 +227,22 @@ public class IDMCLI {
 					String encodedScriptContent = "{B64}"
 							+ Base64.encodeBase64String(rawScriptContent);
 
-					dbUpsertScript(con, scriptName, encodedScriptContent,
-							pkgId, pkgScriptsDb);
-
+					if (pkgScriptsDb.containsKey(scriptName)) {
+						// UPDATE -> collect for bulk
+						updScriptId.add(pkgScriptsDb.get(scriptName));
+						updScriptName.add(scriptName);
+						updEncodedScriptContent.add(encodedScriptContent);
+					} else {
+						// INSERT -> do single now
+						dbInsertScript(con, scriptName, encodedScriptContent,
+								pkgId);
+					}
 				}// for
+
+				if (updScriptId.size() > 0) {
+					dbUpdateScript(con, updScriptName, updScriptId,
+							updEncodedScriptContent, pkgId);
+				}
 
 				con.commit();
 
@@ -318,19 +337,6 @@ public class IDMCLI {
 		return pkgId;
 	}
 
-	private static void dbUpsertScript(Connection con, String scriptName,
-			String encodedScriptContent, int pkgId,
-			Map<String, Integer> pkgScriptsDb) throws Exception {
-
-		if (pkgScriptsDb.containsKey(scriptName)) {
-			int scriptId = pkgScriptsDb.get(scriptName);
-			dbUpdateScript(con, scriptName, scriptId, encodedScriptContent,
-					pkgId);
-		} else {
-			dbInsertScript(con, scriptName, encodedScriptContent, pkgId);
-		}
-	}
-
 	private static void dbInsertScript(Connection con, String scriptName,
 			String encodedScriptContent, int pkgId) throws Exception {
 		PreparedStatement ps = null;
@@ -373,23 +379,35 @@ public class IDMCLI {
 
 	}// dbInsertScript
 
-	private static void dbUpdateScript(Connection con, String scriptName,
-			int scriptId, String encodedScriptContent, int pkgId)
+	private static void dbUpdateScript(Connection con, List<String> scriptName,
+			List<Integer> scriptId, List<String> encodedScriptContent, int pkgId)
 			throws Exception {
 		PreparedStatement ps = null;
+		StringBuffer sql = new StringBuffer();
+		sql.append("update mc_package_scripts set mcscriptdefinition=case mcscriptid ");
+		for (int i = 0; i < scriptId.size(); ++i) {
+			sql.append(" when ? then ? ");
+		}
+		sql.append("end where mcscriptid in (");
+		for (int i = 0; i < scriptId.size(); ++i) {
+			if (i > 0)
+				sql.append(',');
+			sql.append('?');
+		}
+		sql.append(')');
 		try {
-			ps = con.prepareStatement("update mc_package_scripts" //
-					+ " set mcscriptdefinition=?" // 1
-					+ " where mcscriptid=?"// 2
-			);
-			ps.setString(1, encodedScriptContent);
-			ps.setInt(2, scriptId);
-
+			ps = con.prepareStatement(sql.toString());
+			for (int i = 0; i < scriptId.size(); ++i) {
+				ps.setInt(i * 2 + 1, scriptId.get(i));
+				ps.setString(i * 2 + 2, encodedScriptContent.get(i));
+				ps.setInt(scriptId.size() * 2 + i + 1, scriptId.get(i));
+			}
 			int updateCount = ps.executeUpdate();
 
-			if (updateCount != 1) {
+			if (updateCount != scriptId.size()) {
 				throw new Exception("UPDATE " + scriptName + " returned "
-						+ updateCount + " affected rows (should be 1)");
+						+ updateCount + " affected rows (should be "
+						+ scriptId.size() + ")");
 			}
 		} // try
 		finally {
@@ -401,7 +419,7 @@ public class IDMCLI {
 			}
 		} // finally
 
-	}// dbUpdateScript
+	}
 
 	private static byte[] readRawFile(File scriptFile) throws Exception {
 		byte[] buffer = new byte[1024];
