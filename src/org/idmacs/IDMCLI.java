@@ -14,7 +14,9 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -195,6 +197,8 @@ public class IDMCLI {
 
 			try {
 				int pkgId = dbQueryPackageId(con, pkgName);
+				Map<String, Integer> pkgScriptsDb = dbQueryPackageScripts(con,
+						pkgName);
 
 				for (int i = 0; i < scriptFiles.length; ++i) {
 					File scriptFile = scriptFiles[i];
@@ -216,7 +220,8 @@ public class IDMCLI {
 					String encodedScriptContent = "{B64}"
 							+ Base64.encodeBase64String(rawScriptContent);
 
-					dbUpsertScript(con, scriptName, encodedScriptContent, pkgId);
+					dbUpsertScript(con, scriptName, encodedScriptContent,
+							pkgId, pkgScriptsDb);
 
 				}// for
 
@@ -233,6 +238,46 @@ public class IDMCLI {
 		}// if
 
 	}// doPut
+
+	private static Map<String, Integer> dbQueryPackageScripts(Connection con,
+			String pkgName) throws Exception {
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+		Map<String, Integer> results = new HashMap<String, Integer>();
+
+		try {
+			ps = con.prepareStatement("select mcscriptname,mcscriptid" //
+					+ " from mc_package_scripts s"
+					+ " inner join mc_package p"
+					+ " on s.mcpackageid=p.mcpackageid" //
+					+ " where p.mcqualifiedname=?" // 1
+			);
+			ps.setString(1, pkgName);
+
+			rs = ps.executeQuery();
+
+			while (rs.next()) {
+				results.put(rs.getString(1), rs.getInt(2));
+			}
+		} // try
+		finally {
+			if (rs != null) {
+				try {
+					rs.close();
+				} catch (Exception e) {
+				}
+			}
+			if (ps != null) {
+				try {
+					ps.close();
+				} catch (Exception e) {
+				}
+			}
+		} // finally
+
+		return results;
+
+	}
 
 	private static int dbQueryPackageId(Connection con, String pkgName)
 			throws Exception {
@@ -274,49 +319,13 @@ public class IDMCLI {
 	}
 
 	private static void dbUpsertScript(Connection con, String scriptName,
-			String encodedScriptContent, int pkgId) throws Exception {
-		PreparedStatement ps = null;
-		ResultSet rs = null;
-		int scriptId = -1;
-		int pkgIdAct = -1;
-		try {
-			ps = con.prepareStatement("select mcscriptid,mcpackageid" //
-					+ " from mc_package_scripts" //
-					+ " where mcscriptname=?"// 1
-			);
+			String encodedScriptContent, int pkgId,
+			Map<String, Integer> pkgScriptsDb) throws Exception {
 
-			ps.setString(1, scriptName);
-
-			rs = ps.executeQuery();
-
-			if (rs.next()) {
-				scriptId = rs.getInt(1);
-				pkgIdAct = rs.getInt(2);
-			}
-		} // try
-		finally {
-			if (rs != null) {
-				try {
-					rs.close();
-				} catch (Exception e) {
-				}
-			}
-			if (ps != null) {
-				try {
-					ps.close();
-				} catch (Exception e) {
-				}
-			}
-		}// finally
-
-		if (scriptId != -1) {
-			if (pkgId == pkgIdAct) {
-				dbUpdateScript(con, scriptName, scriptId, encodedScriptContent,
-						pkgId);
-			} else {
-				throw new Exception("Script " + scriptName
-						+ " already exists in package ID " + pkgIdAct);
-			}
+		if (pkgScriptsDb.containsKey(scriptName)) {
+			int scriptId = pkgScriptsDb.get(scriptName);
+			dbUpdateScript(con, scriptName, scriptId, encodedScriptContent,
+					pkgId);
 		} else {
 			dbInsertScript(con, scriptName, encodedScriptContent, pkgId);
 		}
