@@ -144,16 +144,15 @@ public class IDMCLI {
 			trc(M + "Removed trailing file separator: pkgName=" + pkgName);
 		}
 
-		File[] scriptFiles = null;
+		List<File> scriptFilesList = new ArrayList<File>(scriptFileNames.size());
 
 		// If -f given: check existence of each and use as is
 		if (!scriptFileNames.isEmpty()) {
-			scriptFiles = new File[scriptFileNames.size()];
 
 			for (int i = 0; i < scriptFileNames.size(); ++i) {
 				File scriptFile = new File(scriptFileNames.get(i));
 				if (scriptFile.exists()) {
-					scriptFiles[i] = scriptFile;
+					scriptFilesList.add(scriptFile);
 				} else {
 					System.err.println("File " + scriptFile.getCanonicalPath()
 							+ " not found");
@@ -184,36 +183,36 @@ public class IDMCLI {
 
 			Arrays.sort(pkgScriptFileNames);
 
-			scriptFiles = new File[pkgScriptFileNames.length];
+			scriptFilesList = new ArrayList<File>(pkgScriptFileNames.length);
 			for (int i = 0; i < pkgScriptFileNames.length; ++i) {
-				scriptFiles[i] = new File(pkgNameDir, pkgScriptFileNames[i]);
+				scriptFilesList.add(new File(pkgNameDir, pkgScriptFileNames[i]));
 			}
 		}// if
 
-		if (scriptFiles.length > 0) {
+		if (scriptFilesList.size() > 0) {
 
 			Connection con = DriverManager.getConnection(jdbcUrl);
 			con.setAutoCommit(false);
 
 			List<Integer> updScriptId = new ArrayList<Integer>(
-					scriptFiles.length);
+					scriptFilesList.size());
 			List<String> updScriptName = new ArrayList<String>(
-					scriptFiles.length);
+					scriptFilesList.size());
 			List<String> updEncodedScriptContent = new ArrayList<String>(
-					scriptFiles.length);
+					scriptFilesList.size());
 
 			try {
 				int pkgId = dbQueryPackageId(con, pkgName);
 				Map<String, Integer> pkgScriptsDb = dbQueryPackageScripts(con,
 						pkgName);
 
-				for (int i = 0; i < scriptFiles.length; ++i) {
-					File scriptFile = scriptFiles[i];
+				for (int i = 0; i < scriptFilesList.size(); ++i) {
+					File scriptFile = scriptFilesList.get(i);
 					String scriptFileName = scriptFile.getName();
 
 					if (g_show_progress) {
 						System.out.println(//
-								(i + 1) + "/" + scriptFiles.length //
+								(i + 1) + "/" + scriptFilesList.size() //
 										+ ": " + scriptFileName //
 								);
 					}
