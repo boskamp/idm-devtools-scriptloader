@@ -185,7 +185,8 @@ public class IDMCLI {
 
 			scriptFilesList = new ArrayList<File>(pkgScriptFileNames.length);
 			for (int i = 0; i < pkgScriptFileNames.length; ++i) {
-				scriptFilesList.add(new File(pkgNameDir, pkgScriptFileNames[i]));
+				scriptFilesList
+						.add(new File(pkgNameDir, pkgScriptFileNames[i]));
 			}
 		}// if
 
@@ -381,11 +382,16 @@ public class IDMCLI {
 	private static void dbUpdateScript(Connection con, List<String> scriptName,
 			List<Integer> scriptId, List<String> encodedScriptContent, int pkgId)
 			throws Exception {
+		final String M = "dbUpdateScript: ";
 		PreparedStatement ps = null;
 		StringBuffer sql = new StringBuffer();
 		sql.append("update mc_package_scripts set mcscriptdefinition=case mcscriptid ");
 		for (int i = 0; i < scriptId.size(); ++i) {
-			sql.append(" when ? then ? ");
+			//TODO: the cast is required on DB2, 
+			//otherwise SQLCODE=-418, SQLSTATE=42610
+			//Problem: this datatype is vendor-specific,
+			//thus the statement won't work on MSS/ORA.
+			sql.append(" when ? then cast(? as CLOB(1G)) ");
 		}
 		sql.append("end where mcscriptid in (");
 		for (int i = 0; i < scriptId.size(); ++i) {
@@ -394,6 +400,7 @@ public class IDMCLI {
 			sql.append('?');
 		}
 		sql.append(')');
+		trc(M + "sql=" + sql.toString());
 		try {
 			ps = con.prepareStatement(sql.toString());
 			for (int i = 0; i < scriptId.size(); ++i) {
