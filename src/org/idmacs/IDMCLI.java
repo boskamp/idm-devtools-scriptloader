@@ -7,10 +7,13 @@ import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.sql.Clob;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -241,7 +244,7 @@ public class IDMCLI {
 
 				if (updScriptId.size() > 0) {
 					dbUpdateScript(con, updScriptName, updScriptId,
-							updEncodedScriptContent, pkgId);
+							updEncodedScriptContent);
 				}
 
 				con.commit();
@@ -278,6 +281,7 @@ public class IDMCLI {
 			while (rs.next()) {
 				results.put(rs.getString(1), rs.getInt(2));
 			}
+
 		} // try
 		finally {
 			if (rs != null) {
@@ -340,6 +344,7 @@ public class IDMCLI {
 	private static void dbInsertScript(Connection con, String scriptName,
 			String encodedScriptContent, int pkgId) throws Exception {
 		PreparedStatement ps = null;
+		Clob c = null;
 		try {
 			ps = con.prepareStatement("insert into mc_package_scripts"
 					+ "(mcpackageid" // 1
@@ -355,7 +360,9 @@ public class IDMCLI {
 			ps.setInt(1, pkgId);
 			ps.setString(2, scriptName);
 			ps.setString(3, "JScript");
-			ps.setString(4, encodedScriptContent);
+			c = con.createClob();
+			c.setString(1, encodedScriptContent);
+			ps.setClob(4, c);
 			ps.setInt(5, 1);
 			ps.setInt(6, 0);
 			ps.setInt(7, 0);
@@ -375,25 +382,34 @@ public class IDMCLI {
 				} catch (Exception e) {
 				}
 			}
+			if (c != null) {
+				try {
+					c.free();
+				} catch (Exception e) {
+				}
+			}
 		} // finally
 
 	}// dbInsertScript
 
 	private static void dbUpdateScript(Connection con, List<String> scriptName,
-			List<Integer> scriptId, List<String> encodedScriptContent, int pkgId)
+			List<Integer> scriptId, List<String> encodedScriptContent)
 			throws Exception {
 		final String M = "dbUpdateScript: ";
+
+		// Need explicit type and length specification by means
+		// of a cast on DB2 to avoid SQLCODE=-302, SQLSTATE=22001
+		String caseResultExpression = con.getMetaData()
+				.getDatabaseProductName().startsWith("DB2") ? "cast(? as CLOB(1G))"
+				: "?";
+
 		PreparedStatement ps = null;
 		StringBuffer sql = new StringBuffer();
 		sql.append("update mc_package_scripts set mcscriptdefinition=case mcscriptid ");
 		for (int i = 0; i < scriptId.size(); ++i) {
-			//TODO: the cast is required on DB2, 
-			//otherwise SQLCODE=-418, SQLSTATE=42610
-			//Problem: this datatype is vendor-specific,
-			//thus the statement won't work on MSS/ORA.
-			sql.append(" when ? then cast(? as CLOB(1G)) ");
+			sql.append(" when ? then " + caseResultExpression);
 		}
-		sql.append("end where mcscriptid in (");
+		sql.append(" end where mcscriptid in (");
 		for (int i = 0; i < scriptId.size(); ++i) {
 			if (i > 0)
 				sql.append(',');
@@ -401,11 +417,18 @@ public class IDMCLI {
 		}
 		sql.append(')');
 		trc(M + "sql=" + sql.toString());
+		List<Clob> clobs = new ArrayList<Clob>(scriptId.size());
 		try {
 			ps = con.prepareStatement(sql.toString());
 			for (int i = 0; i < scriptId.size(); ++i) {
+
 				ps.setInt(i * 2 + 1, scriptId.get(i));
-				ps.setString(i * 2 + 2, encodedScriptContent.get(i));
+				Clob c = con.createClob();
+				clobs.add(c);
+				c.setString(1, encodedScriptContent.get(i));
+				trc(M + "CLOB of " + scriptName.get(i) + " has " + c.length()
+						+ " chars");
+				ps.setClob(i * 2 + 2, c);
 				ps.setInt(scriptId.size() * 2 + i + 1, scriptId.get(i));
 			}
 			int updateCount = ps.executeUpdate();
@@ -423,9 +446,15 @@ public class IDMCLI {
 				} catch (Exception e) {
 				}
 			}
+			for (int i = 0; i < clobs.size(); ++i) {
+				try {
+					clobs.get(i).free();
+				} catch (Exception e) {
+				}
+			}// for
 		} // finally
 
-	}
+	}// dbUpdateScript
 
 	private static byte[] readRawFile(File scriptFile) throws Exception {
 		byte[] buffer = new byte[1024];
@@ -452,7 +481,6 @@ public class IDMCLI {
 
 	public static void main(String[] args) throws Exception {
 		final String M = "main: ";
-		trc(M + "Entering args=" + args);
 
 		// create the command line parser
 		CommandLineParser parser = new DefaultParser();
@@ -519,6 +547,9 @@ public class IDMCLI {
 			if (!line.hasOption('h')) {
 
 				g_verbose = line.hasOption('v');
+				trc(M + "Entering args=" + args);
+				trc(M + "CLASSPATH=" + System.getProperty("java.class.path"));
+
 				g_show_progress = line.hasOption('P');
 
 				List<String> aCmd = line.getArgList();
