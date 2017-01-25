@@ -9,11 +9,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.sql.Clob;
 import java.sql.Connection;
-import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -42,6 +40,10 @@ public class IDMCLI {
 
 	private static boolean g_verbose;
 	private static boolean g_show_progress;
+	private static boolean g_use_clob;
+	private static long g_bytes_processed = 0;
+	private static long g_millis_elapsed = 0L;
+	private static String g_database_product_name;
 
 	private static void trc(String msg) {
 		if (g_verbose) {
@@ -196,6 +198,14 @@ public class IDMCLI {
 		if (scriptFilesList.size() > 0) {
 
 			Connection con = DriverManager.getConnection(jdbcUrl);
+			g_millis_elapsed = System.currentTimeMillis();
+			g_database_product_name = con.getMetaData()
+					.getDatabaseProductName().toUpperCase();
+
+			// Must use CLOB on Oracle, otherwise ORA-00932 or ORA-01461
+			g_use_clob = g_use_clob
+					|| g_database_product_name.startsWith("ORA");
+
 			con.setAutoCommit(false);
 
 			List<Integer> updScriptId = new ArrayList<Integer>(
@@ -248,6 +258,8 @@ public class IDMCLI {
 				}
 
 				con.commit();
+				g_millis_elapsed = System.currentTimeMillis()
+						- g_millis_elapsed;
 
 			} finally {
 				if (con != null) {
@@ -360,9 +372,13 @@ public class IDMCLI {
 			ps.setInt(1, pkgId);
 			ps.setString(2, scriptName);
 			ps.setString(3, "JScript");
-			c = con.createClob();
-			c.setString(1, encodedScriptContent);
-			ps.setClob(4, c);
+			if (g_use_clob) {
+				c = con.createClob();
+				c.setString(1, encodedScriptContent);
+				ps.setClob(4, c);
+			} else {
+				ps.setString(4, encodedScriptContent);
+			}
 			ps.setInt(5, 1);
 			ps.setInt(6, 0);
 			ps.setInt(7, 0);
@@ -397,10 +413,13 @@ public class IDMCLI {
 			throws Exception {
 		final String M = "dbUpdateScript: ";
 
+		String dbProductName = con.getMetaData().getDatabaseProductName()
+				.toUpperCase();
+		trc(M + "dbProductName=" + dbProductName);
+
 		// Need explicit type and length specification by means
 		// of a cast on DB2 to avoid SQLCODE=-302, SQLSTATE=22001
-		String caseResultExpression = con.getMetaData()
-				.getDatabaseProductName().startsWith("DB2") ? "cast(? as CLOB(1G))"
+		String caseResultExpression = dbProductName.startsWith("DB2") ? "cast(? as CLOB(1G))"
 				: "?";
 
 		PreparedStatement ps = null;
@@ -423,12 +442,14 @@ public class IDMCLI {
 			for (int i = 0; i < scriptId.size(); ++i) {
 
 				ps.setInt(i * 2 + 1, scriptId.get(i));
-				Clob c = con.createClob();
-				clobs.add(c);
-				c.setString(1, encodedScriptContent.get(i));
-				trc(M + "CLOB of " + scriptName.get(i) + " has " + c.length()
-						+ " chars");
-				ps.setClob(i * 2 + 2, c);
+				if (g_use_clob) {
+					Clob c = con.createClob();
+					clobs.add(c);
+					c.setString(1, encodedScriptContent.get(i));
+					ps.setClob(i * 2 + 2, c);
+				} else {
+					ps.setString(i * 2 + 2, encodedScriptContent.get(i));
+				}
 				ps.setInt(scriptId.size() * 2 + i + 1, scriptId.get(i));
 			}
 			int updateCount = ps.executeUpdate();
@@ -463,6 +484,7 @@ public class IDMCLI {
 		int len;
 		while ((len = is.read(buffer)) != -1) {
 			os.write(buffer, 0, len);
+			g_bytes_processed += len;
 		}
 		is.close();
 		return os.toByteArray();
@@ -524,6 +546,14 @@ public class IDMCLI {
 				.build());
 
 		options.addOption(Option //
+				.builder("C") // short name
+				.longOpt("use-clob") // long name
+				.required(false) //
+				.desc("use DB CLOB datatype (slow)") // description
+				.argName("PKG_NAME") //
+				.build());
+
+		options.addOption(Option //
 				.builder("v") // short name
 				.longOpt("verbose") // long name
 				.required(false) //
@@ -551,6 +581,8 @@ public class IDMCLI {
 				trc(M + "CLASSPATH=" + System.getProperty("java.class.path"));
 
 				g_show_progress = line.hasOption('P');
+
+				g_use_clob = line.hasOption('C');
 
 				List<String> aCmd = line.getArgList();
 				if (aCmd.size() > 0) {
@@ -644,6 +676,11 @@ public class IDMCLI {
 			System.err.println(smoe.getMessage());
 		} catch (Exception e) {
 			e.printStackTrace();
+		}
+
+		if (g_millis_elapsed > 0) {
+			System.out.println("Speed: " + g_bytes_processed / g_millis_elapsed
+					* 1000 + "B/s");
 		}
 
 		trc(M + "Returning");
