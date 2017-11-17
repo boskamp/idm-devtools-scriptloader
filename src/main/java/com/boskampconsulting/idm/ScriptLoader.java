@@ -1,4 +1,4 @@
-package org.idmacs;
+package com.boskampconsulting.idm;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -27,7 +27,7 @@ import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.codec.binary.Base64;
 
-public class IDMCLI {
+public class ScriptLoader {
 
 	private static class ShowMessageOnlyException extends Exception {
 		static final long serialVersionUID = 1L;
@@ -496,7 +496,7 @@ public class IDMCLI {
 		String v = line.getOptionValue(p);
 		if (v == null || v.equals("")) {
 			throw new ShowMessageOnlyException("Missing mandatory parameter -"
-					+ p + "; try idmcli --help");
+					+ p + "; try idmsl --help");
 		}
 		return v;
 	}// getMandatoryParam
@@ -603,11 +603,11 @@ public class IDMCLI {
 					} else {
 						throw new ShowMessageOnlyException(
 								"Unrecognized command: " + cmd
-										+ "; try idmcli --help");
+										+ "; try idmsl --help");
 					}
 				} else {
 					throw new ShowMessageOnlyException(
-							"Missing command; try idmcli --help");
+							"Missing command; try idmsl --help");
 				}
 			}// if(!line.hasOption('h'))
 			else {
@@ -617,7 +617,7 @@ public class IDMCLI {
 				char[] alp = new char[formatter.getLeftPadding()];
 				Arrays.fill(alp, ' ');
 				String lp = new String(alp);
-				String header = "Put/get package scripts into/from SAP IDM database"
+				String header = "Put/get package scripts into/from SAP(R) IDM database"
 						+ br //
 						+ br //
 						+ "COMMANDS:" + br //
@@ -630,36 +630,36 @@ public class IDMCLI {
 				String footer = br //
 						+ "EXAMPLES:"
 						+ br //
-						+ "idmcli get -p de.foxysoft.core -u jdbc:sqlserver://..."
+						+ "idmsl get -p org.acme.idm -u jdbc:sqlserver://..."
 						+ br //
 						+ lp
-						+ "Download all scripts from package de.foxysoft.core"
+						+ "Download all scripts from package org.acme.idm"
 						+ br //
 						+ lp
-						+ "into local directory $(pwd)/de.foxysoft.core, which will"
+						+ "into local directory $(pwd)/org.acme.idm, which will"
 						+ br //
 						+ lp
 						+ "be created if necessary."
 						+ br //
 						+ br //
-						+ "idmcli put -p de.foxsoft.core -u jdbc:sqlserver://..."
+						+ "idmsl put -p org.acme.idm -u jdbc:sqlserver://..."
 						+ br //
 						+ lp
-						+ "Upload all *.js files located in directory $(pwd)/de.foxysoft.core"
+						+ "Upload all *.js files located in directory $(pwd)/org.acme.idm"
 						+ br //
 						+ lp
-						+ "into package de.foxysoft.core in the database"
+						+ "into package org.acme.idm in the database"
 						+ br //
 						+ br //
-						+ "idmcli put -p de.foxsoft.core -u jdbc:sqlserver://... \\"
+						+ "idmsl put -p org.acme.idm -u jdbc:sqlserver://... \\"
 						+ br //
-						+ "           -f scripts/js/fx_trace.js"
-						+ br //
-						+ lp
-						+ "Upload file fx_trace.js from subdirectory scripts/js"
+						+ "           -f scripts/js/custom_generateID.js"
 						+ br //
 						+ lp
-						+ "into package de.foxysoft.core in the database"
+						+ "Upload file custom_generateID.js from subdirectory scripts/js"
+						+ br //
+						+ lp
+						+ "into package org.acme.idm in the database"
 						+ br //
 						+ br //
 				;
@@ -667,11 +667,11 @@ public class IDMCLI {
 				// Output options in the order they have been declared
 				formatter.setOptionComparator(null);
 
-				formatter.printHelp("idmcli <cmd>", header, options, footer,
+				formatter.printHelp("idmsl <cmd>", header, options, footer,
 						true);
 			}// else
 		} catch (org.apache.commons.cli.MissingArgumentException mae) {
-			System.err.println(mae.getMessage() + "; try idmcli --help");
+			System.err.println(mae.getMessage() + "; try idmsl --help");
 		} catch (ShowMessageOnlyException smoe) {
 			System.err.println(smoe.getMessage());
 		} catch (Exception e) {
@@ -686,4 +686,4 @@ public class IDMCLI {
 		trc(M + "Returning");
 	}// main
 
-}// IDMCLI
+}// ScriptLoader
